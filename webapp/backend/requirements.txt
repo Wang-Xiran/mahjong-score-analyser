@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+apscheduler
+httpx
+beautifulsoup4
+lxml
+jinja2
+python-multipart

@@ -1,0 +1,7 @@
+<span class="fade-message">{{ message }}</span>
+<script>
+  (function () {
+    const el = document.currentScript.previousElementSibling;
+    setTimeout(() => { el.style.opacity = '0'; }, 5000);
+  })();
+</script>

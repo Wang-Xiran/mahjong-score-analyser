@@ -1,0 +1,26 @@
+<label>
+  Player
+  <select id="player" name="player"
+          hx-get="/ui/stats" hx-include="#venue, #season"
+          hx-target="#stats" hx-trigger="load, change">
+    {% for name in players %}
+    <option value="{{ name }}">{{ name }}</option>
+    {% endfor %}
+  </select>
+</label>
+
+<div id="season-select-wrap" hx-swap-oob="true">
+  <label>
+    Season
+    <select id="season" name="season"
+            hx-get="/ui/stats" hx-include="#venue, #player"
+            hx-target="#stats" hx-trigger="change">
+      <option value="">Overall</option>
+      {% for s in seasons %}
+      <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>
+        {{ s }}{% if s == current_season %} (Current){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+</div>

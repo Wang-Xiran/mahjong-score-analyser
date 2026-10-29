@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mahjong Score Analyser</title>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="container">
+    <hgroup>
+      <h1>Mahjong Score Analyser</h1>
+      <p>Scores, best runs, and match history</p>
+    </hgroup>
+
+    <div class="grid">
+      <label>
+        Venue
+        <select id="venue" name="venue"
+                hx-get="/ui/players" hx-target="#player-select-wrap"
+                hx-trigger="load, change">
+          {% for slug, cfg in venues.items() %}
+          <option value="{{ slug }}">{{ cfg.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <div id="player-select-wrap"></div>
+      <div id="season-select-wrap"></div>
+    </div>
+
+    <div class="scrape-row">
+      <button
+        hx-post="/ui/scrape" hx-include="#venue"
+        hx-target="#scrape-status" hx-swap="innerHTML"
+        class="secondary">
+        Scrape now
+      </button>
+      <span id="scrape-status"></span>
+    </div>
+
+    <div id="stats"></div>
+  </main>
+
+  <div id="modal"></div>
+</body>
+</html>

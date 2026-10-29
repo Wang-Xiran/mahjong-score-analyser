@@ -1,0 +1,58 @@
+{% macro game_rows_table(games) %}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Game</th><th>Date</th><th>Placement</th><th>Points</th><th>Score</th></tr>
+    </thead>
+    <tbody>
+      {% for g in games %}
+      <tr class="clickable-row" hx-get="/ui/game/{{ g.game_id }}" hx-target="#modal" hx-swap="innerHTML">
+        <td>{{ g.game_number }}</td>
+        <td>{{ g.date }}</td>
+        <td>{{ g.placement }}</td>
+        <td>{{ g.points }}</td>
+        <td>{{ g.score }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+<h2>{{ summary.player }}</h2>
+
+{% if summary.best_10 is not none %}
+<article>
+  <h3>Best 10{% if summary.best_10.available %} <span class="subtle">({% if summary.is_current_season %}last {% endif %}{{ summary.ranking.total_games }} games)</span>{% endif %}</h3>
+  {% if summary.best_10.available %}
+    {% if summary.is_current_season %}
+      {% if summary.best_10.on_high_run %}
+        <p class="highlight">On their high run right now.</p>
+      {% else %}
+        <p>Needs {{ "%.1f"|format(summary.best_10.points_to_beat_pb) }} more points next game to beat their PB.</p>
+      {% endif %}
+    {% endif %}
+    <p>Best 10-game window total: <strong>{{ "%.1f"|format(summary.best_10.best_sum) }}</strong></p>
+    {{ game_rows_table(summary.best_10.best_frame) }}
+  {% else %}
+    <p>Needs {{ summary.best_10.games_needed }} more game(s) before a best-10 window exists.</p>
+  {% endif %}
+</article>
+{% endif %}
+
+<article>
+  <h3>Ranking distribution ({{ summary.ranking.total_games }} games)</h3>
+  <div class="ranking-grid">
+    {% for place in [1, 2, 3, 4] %}
+    <div>
+      <strong>{{ place }}{{ "st" if place == 1 else "nd" if place == 2 else "rd" if place == 3 else "th" }}</strong>
+      <br>{{ "%.1f"|format(summary.ranking.percentages[place]) }}% ({{ summary.ranking.counts[place] }})
+    </div>
+    {% endfor %}
+  </div>
+</article>
+
+<article>
+  <h3>Match history</h3>
+  {{ game_rows_table(summary.match_history) }}
+</article>

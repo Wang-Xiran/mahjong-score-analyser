@@ -1,0 +1,119 @@
+:root {
+  --positive-color: #2a8a2a;
+  --negative-color: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --positive-color: #4ade80;
+    --negative-color: #f87171;
+  }
+}
+
+.scrape-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.scrape-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.scrape-progress progress {
+  width: 10rem;
+  margin: 0;
+}
+
+.fade-message {
+  display: inline-block;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 1s ease;
+}
+
+.highlight {
+  font-weight: bold;
+  color: var(--positive-color);
+}
+
+.subtle {
+  font-weight: normal;
+  font-size: 0.8em;
+  color: var(--pico-muted-color);
+}
+
+.positive {
+  color: var(--positive-color);
+}
+
+.negative {
+  color: var(--negative-color);
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row td {
+  transition: background-color 100ms ease;
+}
+
+/* Pico gives <td> its own opaque background, which paints over anything
+   set on the <tr> itself, so the highlight has to go on the cells. */
+.clickable-row:hover td {
+  background-color: var(--pico-primary-focus);
+}
+
+dialog article {
+  max-width: min(520px, 92vw);
+}
+
+dialog article table td,
+dialog article table th {
+  white-space: nowrap;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  min-width: 480px;
+}
+
+.table-scroll td,
+.table-scroll th {
+  white-space: nowrap;
+}
+
+.ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .ranking-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+dialog article header {
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--pico-muted-color);
+}

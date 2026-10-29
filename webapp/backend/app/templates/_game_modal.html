@@ -1,0 +1,42 @@
+<dialog id="game-modal">
+  <article>
+    <header>
+      <button type="button" class="modal-close" onclick="document.getElementById('game-modal').close()" aria-label="Close">&times;</button>
+      <strong>{{ game.game_number }}</strong>
+      <p class="subtle">{{ game.date }}</p>
+    </header>
+    <table>
+      <thead>
+        <tr><th>Place</th><th>Name</th><th>Points</th><th>Score</th></tr>
+      </thead>
+      <tbody>
+        {% for p in game.players %}
+        <tr>
+          <td>{{ p.placement }}</td>
+          <td>{{ p.name }}</td>
+          <td>{{ p.points }}</td>
+          <td class="{{ 'positive' if p.score >= 0 else 'negative' }}">{{ p.score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</dialog>
+<script>
+  (function () {
+    const dialog = document.getElementById('game-modal');
+    const previousOverflow = document.body.style.overflow;
+
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+
+    // Covers every way the dialog can close (button, backdrop click, Esc key).
+    dialog.addEventListener('close', () => {
+      document.body.style.overflow = previousOverflow;
+    }, { once: true });
+
+    document.body.style.overflow = 'hidden';
+    dialog.showModal();
+  })();
+</script>

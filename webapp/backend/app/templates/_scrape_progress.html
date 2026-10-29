@@ -1,0 +1,9 @@
+<div
+  class="scrape-progress"
+  hx-get="/ui/scrape/progress/{{ job_id }}"
+  hx-trigger="load delay:300ms"
+  hx-target="this"
+  hx-swap="outerHTML">
+  <progress value="{{ percent }}" max="100"></progress>
+  <span class="subtle">{{ message }}</span>
+</div>
