@@ -117,3 +117,82 @@ dialog article header {
   cursor: pointer;
   color: var(--pico-muted-color);
 }
+
+.trend-chart {
+  width: 100%;
+  height: auto;
+  margin: 0.5rem 0 1rem;
+}
+
+.trend-gridline {
+  stroke: rgba(128, 128, 128, 0.3);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.trend-label {
+  font-size: 10px;
+  fill: var(--pico-muted-color);
+}
+
+.trend-line {
+  fill: none;
+  stroke: var(--pico-primary);
+  stroke-width: 2;
+}
+
+.trend-dot {
+  stroke: var(--pico-background-color);
+  stroke-width: 1.5;
+}
+
+.trend-dot.placement-1 {
+  fill: var(--positive-color);
+}
+
+.trend-dot.placement-4 {
+  fill: var(--negative-color);
+}
+
+.trend-dot.placement-2,
+.trend-dot.placement-3 {
+  fill: var(--pico-primary);
+}
+
+.trend-toggle {
+  margin-top: 0.5rem;
+}
+
+.trend-container {
+  position: relative;
+}
+
+#placement-trend-wrap.htmx-request {
+  opacity: 0.4;
+  transition: opacity 150ms ease;
+}
+
+.trend-spinner {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(128, 128, 128, 0.3);
+  border-top-color: var(--pico-primary);
+  border-radius: 50%;
+  animation: trend-spin 0.7s linear infinite;
+  pointer-events: none;
+}
+
+.trend-spinner.htmx-request {
+  display: block;
+}
+
+@keyframes trend-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}

@@ -1,0 +1,33 @@
+{% if chart.points|length >= 2 %}
+<svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" class="trend-chart" role="img" aria-label="Placement trend over the last {{ chart.points|length }} games">
+  {% for g in chart.gridlines %}
+  <line x1="{{ chart.pad_x }}" x2="{{ chart.width - chart.pad_x }}" y1="{{ g.y }}" y2="{{ g.y }}" class="trend-gridline" />
+  <text x="2" y="{{ g.y + 3 }}" class="trend-label">{{ g.placement }}</text>
+  {% endfor %}
+
+  <polyline points="{{ chart.polyline }}" class="trend-line"
+            style="stroke-dasharray: {{ chart.path_length }}; stroke-dashoffset: {{ chart.path_length }};">
+    <animate attributeName="stroke-dashoffset" from="{{ chart.path_length }}" to="0"
+             dur="{{ chart.animation_duration }}s" fill="freeze" calcMode="linear" />
+  </polyline>
+
+  {% for p in chart.points %}
+  <circle cx="{{ p.x }}" cy="{{ p.y }}" r="4" class="trend-dot placement-{{ p.placement }}" style="opacity: 0;">
+    <animate attributeName="opacity" from="0" to="1" begin="{{ p.delay }}s" dur="0.15s" fill="freeze" />
+    <title>{{ p.game_number }} ({{ p.date }}): {{ p.placement }}{{ "st" if p.placement == 1 else "nd" if p.placement == 2 else "rd" if p.placement == 3 else "th" }}</title>
+  </circle>
+  {% endfor %}
+</svg>
+{% else %}
+<p class="subtle">Not enough games yet for a trend graph.</p>
+{% endif %}
+
+<button
+  hx-get="/ui/trend" hx-include="#venue, #player, #season"
+  hx-vals='{"limit": {{ next_limit }}}'
+  hx-target="#placement-trend-wrap" hx-swap="innerHTML"
+  hx-indicator="#trend-spinner, #placement-trend-wrap"
+  hx-disabled-elt="this"
+  class="outline secondary trend-toggle">
+  Last {{ limit }} games <span class="subtle">(tap for {{ next_limit }})</span>
+</button>

@@ -52,6 +52,21 @@
   </div>
 </article>
 
+{% if summary.best_10 is not none %}
+<article>
+  <h3>Placement trend</h3>
+  <div class="trend-container">
+    <div id="placement-trend-wrap"
+         hx-get="/ui/trend" hx-include="#venue, #player, #season"
+         hx-vals='{"limit": 10}' hx-trigger="load"
+         hx-target="this" hx-swap="innerHTML"
+         hx-indicator="#trend-spinner, #placement-trend-wrap">
+    </div>
+    <div id="trend-spinner" class="trend-spinner" aria-hidden="true"></div>
+  </div>
+</article>
+{% endif %}
+
 <article>
   <h3>Match history</h3>
   {{ game_rows_table(summary.match_history) }}

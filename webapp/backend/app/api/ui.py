@@ -4,12 +4,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Re
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import progress, stats
+from .. import charts, progress, stats
 from ..db import get_db
 from ..scraper import ScrapeInProgress, start_scrape_job
 
 router = APIRouter(prefix="/ui")
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
+
+# The trend toggle button cycles through these window sizes in order.
+TREND_WINDOW_CYCLE = {10: 20, 20: 40, 40: 10}
 
 
 @router.get("/players")
@@ -30,6 +33,28 @@ def stats_fragment(
 ):
     summary = stats.get_player_summary(venue, player, db, season=season or None)
     return templates.TemplateResponse(request, "_stats.html", {"summary": summary})
+
+
+@router.get("/trend")
+def trend_fragment(
+    request: Request,
+    venue: str,
+    player: str,
+    season: str | None = None,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    if limit not in TREND_WINDOW_CYCLE:
+        limit = 10
+
+    results = stats.get_player_results(venue, player, db, season=season or None)
+    chart = charts.build_placement_trend(results[-limit:])
+
+    return templates.TemplateResponse(
+        request,
+        "_placement_trend.html",
+        {"chart": chart, "limit": limit, "next_limit": TREND_WINDOW_CYCLE[limit]},
+    )
 
 
 @router.get("/game/{game_id}")
