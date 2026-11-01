@@ -20,10 +20,24 @@ def players_fragment(request: Request, venue: str, db: Session = Depends(get_db)
     names = stats.get_player_names(venue, db)
     seasons = stats.get_seasons(venue, db)
     current_season = stats.get_current_season(venue, db)
+    # current_season is None right after a new season opens but before any
+    # of its games have a GP reading to tag from (see scraper.scrape_venue) —
+    # in that gap, default the dropdown to the most recent season that does
+    # have games tagged, rather than silently falling back to "Overall".
+    # current_season itself stays None/unchanged: it's also used to decide
+    # the "(Current)" label and the best-10 forward-looking messaging, and
+    # a season with no tagged games yet genuinely isn't "current" for those.
+    default_season = current_season or (seasons[0] if seasons else None)
     return templates.TemplateResponse(
         request,
         "_filters.html",
-        {"venue": venue, "players": names, "seasons": seasons, "current_season": current_season},
+        {
+            "venue": venue,
+            "players": names,
+            "seasons": seasons,
+            "current_season": current_season,
+            "default_season": default_season,
+        },
     )
 
 

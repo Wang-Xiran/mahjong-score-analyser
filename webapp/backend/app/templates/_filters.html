@@ -17,7 +17,7 @@
             hx-target="#stats" hx-trigger="change">
       <option value="">Overall</option>
       {% for s in seasons %}
-      <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>
+      <option value="{{ s }}" {% if s == default_season %}selected{% endif %}>
         {{ s }}{% if s == current_season %} (Current){% endif %}
       </option>
       {% endfor %}

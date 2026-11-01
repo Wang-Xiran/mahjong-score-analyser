@@ -56,3 +56,16 @@ class PlayerGamesPlayed(Base):
     games_played = Column(Integer, nullable=False)
 
     __table_args__ = (UniqueConstraint("venue", "name", name="uq_venue_player_gp"),)
+
+
+class VenueState(Base):
+    """One row per venue, updated on every scrape regardless of whether the
+    scoreboard has any data. Lets the UI still list the newest season (e.g.
+    for the dropdown) even while its leaderboard is completely empty — that
+    info would otherwise be lost, since `Game.season` only reflects seasons
+    that actually have at least one tagged game."""
+
+    __tablename__ = "venue_state"
+
+    venue = Column(String, primary_key=True)
+    latest_season_label = Column(String, nullable=True)

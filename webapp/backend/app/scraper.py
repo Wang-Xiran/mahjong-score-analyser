@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from . import progress
 from .db import SessionLocal
-from .models import Game, PlayerGamesPlayed, PlayerResult
+from .models import Game, PlayerGamesPlayed, PlayerResult, VenueState
 from .venues import VENUES
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,7 @@ def save_games(
     db: Session,
     season_label: str | None = None,
     current_season_keys: set[tuple[str, str]] = frozenset(),
+    leaderboard_is_empty: bool = False,
     on_progress: ProgressFn = _noop_progress,
 ) -> int:
     # Upsert rather than wiping and reinserting: the site's Game Logs
@@ -166,13 +167,31 @@ def save_games(
         db.query(Game).filter(Game.venue == venue).count()
     )  # new games are appended after whatever's already stored
 
+    # GP is written to the site's leaderboard the moment a game is
+    # submitted, so a completely empty leaderboard for the newest season is
+    # a reliable signal — not just "GP hasn't caught up yet" — that zero
+    # games have actually been played in it so far. In that case, anything
+    # still untagged must really belong to whichever season was accruing
+    # before it, so fall back to that instead of leaving new games
+    # unseasoned (where they'd otherwise sit invisible under every
+    # season-filtered view until the new season's board gets real data).
+    fallback_season = None
+    if leaderboard_is_empty and season_label is not None:
+        most_recently_tagged = max(
+            (g for g in existing_games.values() if g.season is not None),
+            key=lambda g: g.order_index,
+            default=None,
+        )
+        if most_recently_tagged is not None:
+            fallback_season = most_recently_tagged.season
+
     total = len(parsed_games)
     # Saving is the one phase with a known total to report real fractional
     # progress against, spread across the 50-90% band of the overall scrape.
     for i, g in enumerate(parsed_games):
         key = (g["game_number"], g["date"])
         game = existing_games.get(key)
-        this_games_season = season_label if key in current_season_keys else None
+        this_games_season = season_label if key in current_season_keys else fallback_season
 
         if game is None:
             game = Game(
@@ -187,7 +206,16 @@ def save_games(
             db.flush()  # need game.id before attaching results
             existing_games[key] = game
         else:
-            if this_games_season is not None:
+            # Once a game has a season, it's locked — never reassigned by a
+            # later scrape, even to a "current" season computed from this
+            # scrape's own (possibly stale/transient) GP numbers. This is
+            # what actually stops the corruption seen at the Season 4→5
+            # boundary: a brief window where the site reported "Season 5"
+            # as current with GP numbers that, combined with the complete
+            # game history, pointed back at a handful of genuine Season 4
+            # games and reassigned them. An untagged (None) game can still
+            # pick up its correct season the first time we see good data.
+            if this_games_season is not None and game.season is None:
                 game.season = this_games_season
             # Replace this one game's results (e.g. a site-side correction)
             # without touching any other game's rows.
@@ -218,6 +246,21 @@ def save_scoreboard(venue: str, games_played: dict[str, int], db: Session) -> No
     db.query(PlayerGamesPlayed).filter(PlayerGamesPlayed.venue == venue).delete(synchronize_session=False)
     for name, gp in games_played.items():
         db.add(PlayerGamesPlayed(venue=venue, name=name, games_played=gp))
+    db.commit()
+
+
+def save_venue_state(venue: str, season_label: str | None, db: Session) -> None:
+    """Record the newest season label seen, even when its leaderboard is
+    empty — unlike Game.season, this isn't lost just because nothing's
+    tagged with it yet, so the UI can still list it."""
+    if season_label is None:
+        return
+    state = db.get(VenueState, venue)
+    if state is None:
+        state = VenueState(venue=venue, latest_season_label=season_label)
+        db.add(state)
+    else:
+        state.latest_season_label = season_label
     db.commit()
 
 
@@ -267,7 +310,26 @@ def scrape_venue(venue: str, on_progress: ProgressFn = _noop_progress) -> int:
     parsed_games = parse_games(html)
     games_played = parse_scoreboard(html)
     season_label = parse_season_label(html)
-    current_season_keys = compute_current_season_game_keys(parsed_games, games_played)
+
+    # An empty/missing scoreboard (e.g. right after a new season opens with
+    # no games recorded yet, or a site layout change breaks our scoreboard
+    # selector) means we have no trustworthy GP numbers to work from — we
+    # can't compute *which* games are this season's. save_games still
+    # handles this case (falling back untagged games to the previous
+    # season, see leaderboard_is_empty below); this just means we can't
+    # positively confirm anything as belonging to the new season yet.
+    leaderboard_is_empty = not games_played
+    if games_played and season_label is not None:
+        current_season_keys = compute_current_season_game_keys(parsed_games, games_played)
+    else:
+        logger.info(
+            "No scoreboard/season data for %s this scrape (season_label=%r, %d GP entries) — "
+            "falling back untagged games to the previous season",
+            venue,
+            season_label,
+            len(games_played),
+        )
+        current_season_keys = set()
 
     db = SessionLocal()
     try:
@@ -277,8 +339,10 @@ def scrape_venue(venue: str, on_progress: ProgressFn = _noop_progress) -> int:
             db,
             season_label=season_label,
             current_season_keys=current_season_keys,
+            leaderboard_is_empty=leaderboard_is_empty,
             on_progress=on_progress,
         )
+        save_venue_state(venue, season_label, db)
         on_progress(92, "Saving scoreboard…")
         save_scoreboard(venue, games_played, db)
         return count

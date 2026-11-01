@@ -2,7 +2,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from .models import Game, PlayerGamesPlayed, PlayerResult
+from .models import Game, PlayerGamesPlayed, PlayerResult, VenueState
 
 
 def get_player_names(venue: str, db: Session) -> list[str]:
@@ -23,14 +23,24 @@ def _season_sort_key(season: str) -> int:
 
 
 def get_seasons(venue: str, db: Session) -> list[str]:
-    """Every season tagged in the DB for this venue, newest first."""
+    """Every season tagged in the DB for this venue, newest first — plus the
+    latest season label seen on the site even if it has zero games tagged
+    yet (e.g. it just opened and nothing's been played in it), since that
+    would otherwise be invisible: Game.season only reflects seasons with at
+    least one game actually attributed to them."""
     rows = (
         db.query(Game.season)
         .filter(Game.venue == venue, Game.season.isnot(None))
         .distinct()
         .all()
     )
-    return sorted((r[0] for r in rows), key=_season_sort_key, reverse=True)
+    seasons = {r[0] for r in rows}
+
+    venue_state = db.get(VenueState, venue)
+    if venue_state is not None and venue_state.latest_season_label is not None:
+        seasons.add(venue_state.latest_season_label)
+
+    return sorted(seasons, key=_season_sort_key, reverse=True)
 
 
 def get_current_season(venue: str, db: Session) -> str | None:
