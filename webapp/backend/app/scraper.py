@@ -191,7 +191,8 @@ def save_games(
     for i, g in enumerate(parsed_games):
         key = (g["game_number"], g["date"])
         game = existing_games.get(key)
-        this_games_season = season_label if key in current_season_keys else fallback_season
+        is_confirmed = key in current_season_keys
+        this_games_season = season_label if is_confirmed else fallback_season
 
         if game is None:
             game = Game(
@@ -200,23 +201,37 @@ def save_games(
                 date=g["date"],
                 order_index=next_order_index,
                 season=this_games_season,
+                season_provisional=this_games_season is not None and not is_confirmed,
             )
             next_order_index += 1
             db.add(game)
             db.flush()  # need game.id before attaching results
             existing_games[key] = game
         else:
-            # Once a game has a season, it's locked — never reassigned by a
-            # later scrape, even to a "current" season computed from this
-            # scrape's own (possibly stale/transient) GP numbers. This is
-            # what actually stops the corruption seen at the Season 4→5
-            # boundary: a brief window where the site reported "Season 5"
-            # as current with GP numbers that, combined with the complete
-            # game history, pointed back at a handful of genuine Season 4
-            # games and reassigned them. An untagged (None) game can still
-            # pick up its correct season the first time we see good data.
-            if this_games_season is not None and game.season is None:
-                game.season = this_games_season
+            # A *confirmed* season (set from an actual GP-window match) is
+            # locked forever — never reassigned by a later scrape, even to a
+            # "current" season computed from this scrape's own (possibly
+            # stale/transient) GP numbers. This is what stops the
+            # corruption seen at the Season 4→5 boundary: a brief window
+            # where the site reported "Season 5" as current with GP numbers
+            # that, combined with the complete game history, pointed back
+            # at a handful of genuine Season 4 games and reassigned them.
+            #
+            # A *provisional* season (only ever guessed via the
+            # leaderboard_is_empty fallback below, because there was no GP
+            # data yet to confirm anything) is NOT locked the same way —
+            # once real GP evidence arrives, it should correct the guess
+            # rather than leave it stuck. That's the gap that left genuine
+            # Season 5 games permanently mislabeled "Season 4" once Season
+            # 5's leaderboard filled in: the fallback guess got treated as
+            # equally permanent as a confirmed tag.
+            if game.season is None:
+                if this_games_season is not None:
+                    game.season = this_games_season
+                    game.season_provisional = not is_confirmed
+            elif game.season_provisional and is_confirmed:
+                game.season = season_label
+                game.season_provisional = False
             # Replace this one game's results (e.g. a site-side correction)
             # without touching any other game's rows.
             db.query(PlayerResult).filter(PlayerResult.game_id == game.id).delete(

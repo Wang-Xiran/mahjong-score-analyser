@@ -31,6 +31,15 @@ def _migrate_schema() -> None:
         columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(games)")}
         if "season" not in columns:
             conn.exec_driver_sql("ALTER TABLE games ADD COLUMN season VARCHAR")
+        if "season_provisional" not in columns:
+            # Default 0/False (confirmed) for pre-existing rows: we can't
+            # retroactively tell which were only ever fallback-guessed, and
+            # treating unknown history as confirmed is the safe default —
+            # any genuinely-mistagged games get fixed by a one-off
+            # correction script instead, not blanket-reopened here.
+            conn.exec_driver_sql(
+                "ALTER TABLE games ADD COLUMN season_provisional BOOLEAN NOT NULL DEFAULT 0"
+            )
 
         indexes = {row[1] for row in conn.exec_driver_sql("PRAGMA index_list(games)")}
         if "uq_venue_game_number" in indexes:

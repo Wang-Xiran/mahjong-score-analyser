@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .db import Base
@@ -16,6 +16,13 @@ class Game(Base):
     # site's scoreboard GP numbers at scrape time. Null for games older than
     # what GP currently covers — we have no way to attribute those yet.
     season = Column(String, nullable=True, index=True)
+    # True when `season` is only a guess (the leaderboard was empty when it
+    # was tagged, see scraper.save_games's leaderboard_is_empty fallback),
+    # as opposed to confirmed by an actual GP-window match. A provisional
+    # tag can still be corrected once real evidence arrives; a confirmed one
+    # (season_provisional=False) never is — that's what stops a transient
+    # bad scrape from reassigning genuinely old games.
+    season_provisional = Column(Boolean, nullable=False, default=False)
 
     results = relationship("PlayerResult", back_populates="game", cascade="all, delete-orphan")
 
