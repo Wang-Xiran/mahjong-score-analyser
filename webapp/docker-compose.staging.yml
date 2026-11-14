@@ -1,0 +1,11 @@
+name: mahjong-staging
+
+services:
+  mahjong-app-staging:
+    build: ./backend
+    container_name: mahjong-app-staging
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data-staging:/app/data
+    restart: unless-stopped
