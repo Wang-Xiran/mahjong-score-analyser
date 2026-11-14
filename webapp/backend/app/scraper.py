@@ -48,6 +48,16 @@ def fetch_html(url: str) -> str:
     return response.text
 
 
+def normalize_game_date(date: str) -> str:
+    """The site renders a freshly-played game's date with a timestamp (e.g.
+    "11/7/2026, 6:00:02 AM") but renders the same game as just a date (e.g.
+    "11/7/2026") once it's no longer brand-new. Since games are matched by
+    (game_number, date), that format change alone created a second row for
+    the same game once it "aged out" of the timestamped view. Keeping only
+    the date portion makes both forms match the same stored row."""
+    return date.split(",")[0].strip()
+
+
 def parse_games(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     game_divs = soup.find_all("div", class_="game-display")
@@ -57,7 +67,7 @@ def parse_games(html: str) -> list[dict]:
     for game in game_divs:
         header_spans = game.find("div", class_="game-display-header").find_all("span")
         game_number = header_spans[0].text
-        game_date = header_spans[1].text
+        game_date = normalize_game_date(header_spans[1].text)
 
         players = []
         for player in game.find_all("div", class_="game-player-display"):
