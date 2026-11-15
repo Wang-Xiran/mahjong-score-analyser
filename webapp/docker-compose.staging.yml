@@ -9,3 +9,12 @@ services:
     volumes:
       - ./data-staging:/app/data
     restart: unless-stopped
+    # Being its own Compose project (see `name:` above) gives this container
+    # its own bridge network, separate from the production deployment's -
+    # and that network wasn't picking up usable DNS servers, so scraping
+    # failed with "Temporary failure in name resolution" even though the
+    # same code works fine in production. Pinning public resolvers sidesteps
+    # whatever's misconfigured for this network's default DNS.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
