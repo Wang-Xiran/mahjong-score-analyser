@@ -76,3 +76,15 @@ class VenueState(Base):
 
     venue = Column(String, primary_key=True)
     latest_season_label = Column(String, nullable=True)
+
+
+class SeasonSettings(Base):
+    """Per-venue, per-season override for the best-window size (e.g. a
+    short season might use 8 instead of the usual 10) — set via the "Apply"
+    control next to a season's Best-N block. Absent means the default."""
+
+    __tablename__ = "season_settings"
+
+    venue = Column(String, primary_key=True)
+    season = Column(String, primary_key=True)
+    best_window_size = Column(Integer, nullable=False)

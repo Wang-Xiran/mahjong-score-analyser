@@ -49,6 +49,24 @@ def stats_fragment(
     return templates.TemplateResponse(request, "_stats.html", {"summary": summary})
 
 
+@router.post("/season-window")
+def set_season_window(
+    request: Request,
+    venue: str = Form(...),
+    player: str = Form(...),
+    season: str = Form(...),
+    window_size: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    # Clamped rather than rejected: this only changes how "best run" is
+    # computed, not any underlying game data, so there's no real harm in
+    # being forgiving about a slightly out-of-range value typed by hand.
+    window_size = max(1, min(window_size, 50))
+    stats.set_best_window_size(venue, season, window_size, db)
+    summary = stats.get_player_summary(venue, player, db, season=season)
+    return templates.TemplateResponse(request, "_stats.html", {"summary": summary})
+
+
 @router.get("/trend")
 def trend_fragment(
     request: Request,

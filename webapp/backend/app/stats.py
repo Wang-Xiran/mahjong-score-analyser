@@ -2,7 +2,9 @@ import re
 
 from sqlalchemy.orm import Session
 
-from .models import Game, PlayerGamesPlayed, PlayerResult, VenueState
+from .models import Game, PlayerGamesPlayed, PlayerResult, SeasonSettings, VenueState
+
+DEFAULT_BEST_WINDOW_SIZE = 10
 
 
 def get_player_names(venue: str, db: Session) -> list[str]:
@@ -105,7 +107,21 @@ def get_games_played(venue: str, player: str, db: Session) -> int | None:
     return row[0] if row else None
 
 
-def calc_best_window(results: list[dict], window_size: int = 10) -> dict:
+def get_best_window_size(venue: str, season: str, db: Session) -> int:
+    row = db.get(SeasonSettings, (venue, season))
+    return row.best_window_size if row is not None else DEFAULT_BEST_WINDOW_SIZE
+
+
+def set_best_window_size(venue: str, season: str, window_size: int, db: Session) -> None:
+    row = db.get(SeasonSettings, (venue, season))
+    if row is None:
+        db.add(SeasonSettings(venue=venue, season=season, best_window_size=window_size))
+    else:
+        row.best_window_size = window_size
+    db.commit()
+
+
+def calc_best_window(results: list[dict], window_size: int = DEFAULT_BEST_WINDOW_SIZE) -> dict:
     """results must be ordered oldest-to-newest (as get_player_results returns)."""
     if len(results) < window_size:
         return {"available": False, "games_needed": window_size - len(results)}
@@ -145,25 +161,30 @@ def calc_ranking_distribution(results: list[dict]) -> dict:
 
 def get_player_summary(venue: str, player: str, db: Session, season: str | None = None) -> dict:
     """season=None means "Overall": full history, ranking + match history
-    only, no best-10 block. A season name scopes everything to just that
-    season's games and adds the best-10 block — the window is exactly that
+    only, no best-N block. A season name scopes everything to just that
+    season's games and adds the best-N block — the window is exactly that
     season's games (no further limiting needed, since each game is already
-    tagged with the one season it belongs to). The "needs N more points" /
-    "on their high run" messaging only makes sense for the still-open
-    current season, not a closed past one, so callers should check
-    is_current_season before showing it."""
+    tagged with the one season it belongs to). The window size itself is
+    per-season (see SeasonSettings/get_best_window_size) since a short
+    season may want a smaller window than the usual 10. The "needs N more
+    points" / "on their high run" messaging only makes sense for the
+    still-open current season, not a closed past one, so callers should
+    check is_current_season before showing it."""
     results = get_player_results(venue, player, db, season=season)
 
     best_10 = None
+    best_window_size = None
     is_current_season = False
     if season is not None:
-        best_10 = calc_best_window(results, window_size=10)
+        best_window_size = get_best_window_size(venue, season, db)
+        best_10 = calc_best_window(results, window_size=best_window_size)
         is_current_season = season == get_current_season(venue, db)
 
     return {
         "player": player,
         "season": season,
         "is_current_season": is_current_season,
+        "best_window_size": best_window_size,
         "best_10": best_10,
         "ranking": calc_ranking_distribution(results),
         "match_history": list(reversed(results)),  # most recent game first
