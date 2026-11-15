@@ -254,9 +254,58 @@ def save_games(
     existing_games = {
         (g.game_number, g.date): g for g in db.query(Game).filter(Game.venue == venue).all()
     }
-    next_order_index = (
+    _next_fallback_order_index = [
         db.query(Game).filter(Game.venue == venue).count()
-    )  # new games are appended after whatever's already stored
+    ]  # fallback counter, see _resolve_order_indices below
+
+    def _numeric_order_index(game_number: str) -> int | None:
+        try:
+            return int(game_number.removeprefix("Game #"))
+        except ValueError:
+            return None
+
+    # order_index needs to reflect each game's true chronological position,
+    # not just "when we happened to insert it" — that assumption broke once
+    # parse_games_from_payload could discover a historical game (e.g. #514)
+    # that the site's pagination had hidden from every earlier scrape: being
+    # "new" to our DB no longer means "the newest game", so simply appending
+    # it put it last instead of between #510 and #518. The game's own number
+    # is a stable, permanent chronological sequence, so order_index is just
+    # that number — self-correcting every scrape for every game it touches,
+    # not just ones inserted under the old scheme.
+    #
+    # Resolved up front (rather than inline per-row) because game_number
+    # isn't actually guaranteed unique by itself — two DB rows can still
+    # share one while a date-format-change duplicate (see
+    # normalize_game_date) is waiting to be merged by
+    # scripts/fix_duplicate_games.py. Without this, both would be assigned
+    # the identical id-derived order_index and collide on
+    # UniqueConstraint("venue", "order_index"); the second one here instead
+    # falls back to a plain incrementing value until that cleanup runs.
+    #
+    # `claimed` starts seeded with every OTHER existing game's current
+    # order_index (anything this call isn't about to touch/renumber) —
+    # otherwise a duplicate-game_number row from a past, separate scrape
+    # could go undetected simply because it isn't in this call's own batch.
+    def _resolve_order_indices(games: list[dict]) -> dict[tuple[str, str], int]:
+        touched_keys = {(g["game_number"], g["date"]) for g in games}
+        claimed: set[int] = {
+            existing.order_index
+            for key, existing in existing_games.items()
+            if key not in touched_keys
+        }
+        resolved: dict[tuple[str, str], int] = {}
+        for g in games:
+            key = (g["game_number"], g["date"])
+            candidate = _numeric_order_index(g["game_number"])
+            if candidate is None or candidate in claimed:
+                candidate = _next_fallback_order_index[0]
+                _next_fallback_order_index[0] += 1
+            claimed.add(candidate)
+            resolved[key] = candidate
+        return resolved
+
+    final_order_index = _resolve_order_indices(parsed_games)
 
     # GP is written to the site's leaderboard the moment a game is
     # submitted, so a completely empty leaderboard for the newest season is
@@ -266,6 +315,8 @@ def save_games(
     # before it, so fall back to that instead of leaving new games
     # unseasoned (where they'd otherwise sit invisible under every
     # season-filtered view until the new season's board gets real data).
+    #
+    # This must read order_index before the renumbering below touches it.
     fallback_season = None
     if leaderboard_is_empty and season_label is not None:
         most_recently_tagged = max(
@@ -275,6 +326,16 @@ def save_games(
         )
         if most_recently_tagged is not None:
             fallback_season = most_recently_tagged.season
+
+    # Two-phase update: first move every touched existing game's order_index
+    # to a negative placeholder, then assign final values in the main loop
+    # below. Without this, reassigning one game's order_index to a value
+    # another not-yet-updated game still holds would trip the
+    # UniqueConstraint("venue", "order_index") mid-transaction.
+    for key, existing in existing_games.items():
+        if key in final_order_index:
+            existing.order_index = -final_order_index[key] - 1
+    db.flush()
 
     total = len(parsed_games)
     # Saving is the one phase with a known total to report real fractional
@@ -290,15 +351,15 @@ def save_games(
                 venue=venue,
                 game_number=g["game_number"],
                 date=g["date"],
-                order_index=next_order_index,
+                order_index=final_order_index[key],
                 season=this_games_season,
                 season_provisional=this_games_season is not None and not is_confirmed,
             )
-            next_order_index += 1
             db.add(game)
             db.flush()  # need game.id before attaching results
             existing_games[key] = game
         else:
+            game.order_index = final_order_index[key]
             # A *confirmed* season (set from an actual GP-window match) is
             # locked forever — never reassigned by a later scrape, even to a
             # "current" season computed from this scrape's own (possibly
