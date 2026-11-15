@@ -1,7 +1,9 @@
 import logging
 import re
 import threading
+from datetime import datetime
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 import httpx
 from bs4 import BeautifulSoup
@@ -21,6 +23,29 @@ _scrape_locks_guard = threading.Lock()
 _scraping_venues: set[str] = set()
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+# All game times on the site are for this single venue's own timezone -
+# used to turn the embedded payload's UTC timestamps (see
+# parse_games_from_payload) into the same "M/D/YYYY" local-date strings the
+# rendered page (and so the rest of this module, and everything already
+# stored) uses.
+_VENUE_TZ = ZoneInfo("Australia/Melbourne")
+
+# The site's "Game Logs" section embeds the FULL game history (every game
+# since season 1) as part of its React hydration payload - escaped JSON
+# sitting inside a <script> tag - regardless of how many are actually
+# rendered as visible "game-display" cards (see parse_games_from_payload).
+# These match that escaped-JSON shape directly rather than parsing it as
+# real JSON, since it's nested one level inside a larger non-JSON flight
+# payload string - not worth a full parser for two fields.
+_PAYLOAD_PLAYER_NAME_RE = re.compile(r'\[(\d+),\{\\"id\\":\d+,\\"name\\":\\"([^\\]+)\\"')
+_PAYLOAD_GAME_RE = re.compile(
+    r'\\"id\\":(\d+),\\"date\\":\\"\$D([^\\]+)\\",'
+    r'\\"player1\\":\{\\"id\\":(\d+),\\"points\\":(-?\d+),\\"roundScore\\":(-?[\d.]+),\\"rank\\":(\d+)\},'
+    r'\\"player2\\":\{\\"id\\":(\d+),\\"points\\":(-?\d+),\\"roundScore\\":(-?[\d.]+),\\"rank\\":(\d+)\},'
+    r'\\"player3\\":\{\\"id\\":(\d+),\\"points\\":(-?\d+),\\"roundScore\\":(-?[\d.]+),\\"rank\\":(\d+)\},'
+    r'\\"player4\\":\{\\"id\\":(\d+),\\"points\\":(-?\d+),\\"roundScore\\":(-?[\d.]+),\\"rank\\":(\d+)\}'
+)
 
 # (percent, message) -> None, called as the scrape moves through real phases.
 ProgressFn = Callable[[int, str], None]
@@ -82,6 +107,62 @@ def parse_games(html: str) -> list[dict]:
 
         parsed.append({"game_number": game_number, "date": game_date, "players": players})
 
+    return parsed
+
+
+def parse_games_from_payload(html: str) -> list[dict]:
+    """The site now paginates the rendered Game Logs (10 per page by
+    default), so parse_games alone only ever sees the newest page - any
+    older game simply isn't in the HTML it looks at, and gets silently
+    skipped forever once it "ages out" of that page. But the full history is
+    still embedded in the same response as part of React's hydration data
+    (see the regexes above), unpaginated, all the way back to game #1.
+
+    The tradeoff: this payload's "roundScore" is each game's RAW score,
+    before any chombo/penalty correction - corrections live in a separate
+    list matched by player + a timestamp that doesn't reliably correspond to
+    the game itself (penalties are sometimes added well after the fact,
+    e.g. "Missed in-game chombo"), so there's no sound way to re-attach them
+    here. Callers should prefer parse_games's rendered (and so
+    penalty-correct) version of any game that's still visible there, and
+    use this only to recover games that have already scrolled out of view -
+    an approximate score beats a completely missing game, but isn't a full
+    substitute for the rendered page where one's available.
+
+    Returns games oldest-first, matching parse_games's ordering. Returns an
+    empty list if the payload's shape doesn't match (e.g. a future site
+    change) - callers should treat that as "recovery unavailable", not fail
+    the whole scrape over it.
+    """
+    names = {int(m.group(1)): m.group(2) for m in _PAYLOAD_PLAYER_NAME_RE.finditer(html)}
+
+    parsed = []
+    for m in _PAYLOAD_GAME_RE.finditer(html):
+        game_id, iso_date = m.group(1), m.group(2)
+        player_groups = m.groups()[2:]  # 4 players x (id, points, roundScore, rank)
+
+        ranked_players = []
+        ok = True
+        for i in range(4):
+            pid, points, score, rank = player_groups[i * 4 : i * 4 + 4]
+            name = names.get(int(pid))
+            if name is None:
+                ok = False  # unknown player id - skip rather than guess
+                break
+            ranked_players.append((int(rank), {"name": name, "points": int(points), "score": float(score)}))
+        if not ok:
+            continue
+
+        local_date = datetime.fromisoformat(iso_date.replace("Z", "+00:00")).astimezone(_VENUE_TZ)
+        parsed.append(
+            {
+                "game_number": f"Game #{game_id}",
+                "date": f"{local_date.month}/{local_date.day}/{local_date.year}",
+                "players": [p for _, p in sorted(ranked_players, key=lambda rp: rp[0])],  # rank order, not seat order
+            }
+        )
+
+    parsed.sort(key=lambda g: int(g["game_number"].removeprefix("Game #")))
     return parsed
 
 
@@ -332,7 +413,28 @@ def scrape_venue(venue: str, on_progress: ProgressFn = _noop_progress) -> int:
     html = fetch_html(config["url"])
 
     on_progress(45, "Parsing games…")
-    parsed_games = parse_games(html)
+    visible_games = parse_games(html)
+    recovered_games = parse_games_from_payload(html)
+
+    # Merge: the full history from the embedded payload is the base (it's
+    # the only one that reaches past whatever page the site happens to be
+    # showing), but swap in the rendered version of any game that's also
+    # currently visible there, since only that one reflects a chombo/penalty
+    # correction if one applies. See parse_games_from_payload for why the
+    # two can't simply be reconciled the other way around.
+    if recovered_games:
+        visible_by_key = {g["game_number"]: g for g in visible_games}
+        parsed_games = [visible_by_key.get(g["game_number"], g) for g in recovered_games]
+        extra_keys = set(visible_by_key) - {g["game_number"] for g in recovered_games}
+        parsed_games += [visible_by_key[k] for k in extra_keys]
+    else:
+        logger.warning(
+            "Couldn't recover full game history for %s from the embedded payload "
+            "(site layout may have changed) — falling back to just the visible page",
+            venue,
+        )
+        parsed_games = visible_games
+
     games_played = parse_scoreboard(html)
     season_label = parse_season_label(html)
 
